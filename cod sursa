@@ -1,0 +1,153 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <chrono>
+
+using namespace std;
+using namespace std::chrono;
+
+struct Pixel {
+    unsigned char r, g, b;
+};
+
+struct Image {
+    int width;
+    int height;
+    vector<Pixel> data;
+};
+
+Image readPPM(const string& filename) {
+    ifstream file(filename, ios::binary);
+    if (!file) {
+        throw runtime_error("Nu s-a putut deschide fisierul de intrare.");
+    }
+
+    string format;
+    file >> format;
+    if (format != "P6") {
+        throw runtime_error("Fisierul nu este in format P6 PPM.");
+    }
+
+    int width, height, maxVal;
+    file >> width >> height >> maxVal;
+    file.ignore();
+
+    Image img;
+    img.width = width;
+    img.height = height;
+    img.data.resize(width * height);
+
+    file.read(reinterpret_cast<char*>(img.data.data()), width * height * 3);
+
+    if (!file) {
+        throw runtime_error("Eroare la citirea pixelilor.");
+    }
+
+    return img;
+}
+
+void writePPM(const string& filename, const Image& img) {
+    ofstream file(filename, ios::binary);
+    if (!file) {
+        throw runtime_error("Nu s-a putut deschide fisierul de iesire.");
+    }
+
+    file << "P6\n";
+    file << img.width << " " << img.height << "\n";
+    file << "255\n";
+
+    file.write(reinterpret_cast<const char*>(img.data.data()), img.width * img.height * 3);
+}
+
+Image manualGrayscale(const Image& input) {
+    Image output;
+    output.width = input.width;
+    output.height = input.height;
+    output.data.resize(input.width * input.height);
+
+    for (int i = 0; i < input.width * input.height; i++) {
+        unsigned char gray = static_cast<unsigned char>(
+            0.299 * input.data[i].r +
+            0.587 * input.data[i].g +
+            0.114 * input.data[i].b
+            );
+
+        output.data[i].r = gray;
+        output.data[i].g = gray;
+        output.data[i].b = gray;
+    }
+
+    return output;
+}
+
+Image manualResize(const Image& input, int newWidth, int newHeight) {
+    Image output;
+    output.width = newWidth;
+    output.height = newHeight;
+    output.data.resize(newWidth * newHeight);
+
+    float x_ratio = static_cast<float>(input.width) / newWidth;
+    float y_ratio = static_cast<float>(input.height) / newHeight;
+
+    for (int y = 0; y < newHeight; y++) {
+        for (int x = 0; x < newWidth; x++) {
+            int oldX = static_cast<int>(x * x_ratio);
+            int oldY = static_cast<int>(y * y_ratio);
+
+            if (oldX >= input.width) oldX = input.width - 1;
+            if (oldY >= input.height) oldY = input.height - 1;
+
+            output.data[y * newWidth + x] = input.data[oldY * input.width + oldX];
+        }
+    }
+
+    return output;
+}
+
+int main() {
+    try {
+        Image input = readPPM("input.ppm");
+
+        cout << "Imagine initiala: " << input.width << " x " << input.height << "\n";
+
+        auto startGray = high_resolution_clock::now();
+        Image gray = manualGrayscale(input);
+        auto endGray = high_resolution_clock::now();
+        auto grayTime = duration_cast<microseconds>(endGray - startGray);
+        writePPM("output_grayscale.ppm", gray);
+
+        auto startResizeSmall = high_resolution_clock::now();
+        Image resizedSmall = manualResize(input, input.width / 4, input.height / 4);
+        auto endResizeSmall = high_resolution_clock::now();
+        auto resizeSmallTime = duration_cast<microseconds>(endResizeSmall - startResizeSmall);
+        writePPM("output_resized_small.ppm", resizedSmall);
+
+        auto startResizeLarge = high_resolution_clock::now();
+        Image resizedLarge = manualResize(input, input.width * 2, input.height * 2);
+        auto endResizeLarge = high_resolution_clock::now();
+        auto resizeLargeTime = duration_cast<microseconds>(endResizeLarge - startResizeLarge);
+        writePPM("output_resized_large.ppm", resizedLarge);
+
+        cout << "Grayscale generat: output_grayscale.ppm ("
+            << gray.width << " x " << gray.height << ")\n";
+
+        cout << "Resize mic generat: output_resized_small.ppm ("
+            << resizedSmall.width << " x " << resizedSmall.height << ")\n";
+
+        cout << "Resize mare generat: output_resized_large.ppm ("
+            << resizedLarge.width << " x " << resizedLarge.height << ")\n";
+
+        cout << "\nTimpi de rulare:\n";
+        cout << "Grayscale: " << grayTime.count() << " microsecunde\n";
+        cout << "Resize mic: " << resizeSmallTime.count() << " microsecunde\n";
+        cout << "Resize mare: " << resizeLargeTime.count() << " microsecunde\n";
+
+        cout << "\nProcesarea s-a terminat cu succes.\n";
+    }
+    catch (const exception& e) {
+        cout << "Eroare: " << e.what() << endl;
+    }
+
+    return 0;
+}
